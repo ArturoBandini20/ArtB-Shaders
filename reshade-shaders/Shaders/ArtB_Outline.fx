@@ -125,7 +125,7 @@ float4 PS_Outline_P1(float4 pos : SV_Position, float2 coord : TEXCOORD) : SV_Tar
 		col4.rgb = float3(floor(t1*col4.r+d1)/t1, floor(t2*col4.g+d2)/t2, floor(t3*col4.b+d3)/t3);
 	}
 	
-	// how many neighbours have the same color?
+	// how many neighbours do have the same color?
 	int count = 0;
 	if (col0.r==col1.r && col0.g==col1.g && col0.b==col1.b) count++;
 	if (col0.r==col2.r && col0.g==col2.g && col0.b==col2.b) count++;
