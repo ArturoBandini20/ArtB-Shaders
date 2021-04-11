@@ -1,8 +1,25 @@
 /*********************************************************************************************************\
 *                                                                                                         *
 *   ArtB. Outline                                                                                         *
-*   v1.00, 2020 by ArturoBandini                                                                          *
-*   License: Free for everyone                                                                            *
+*   v2.00, 2021 by ArturoBandini                                                                          *
+*                                                                                                         *
+*	License:                                                                                              *
+*   Permission is hereby granted, free of charge, to any person obtaining a copy                          *
+*   of this software and associated documentation files (the "Software"), to deal                         *
+*   in the Software without restriction, including without limitation the rights                          *
+*   to use, copy, modify, merge, publish, distribute, and to permit persons to                            *
+*   whom the Software is furnished to do so, subject to the following conditions:                         *
+*                                                                                                         *
+*   The above copyright notice and this permission notice shall be included in all                        *
+*   copies or substantial portions of the Software.                                                       *
+*                                                                                                         *
+*   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR                            *
+*   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,                              *
+*   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE                           *
+*   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER                                *
+*   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,                         *
+*   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE                         *
+*   SOFTWARE.                                                                                             *
 *                                                                                                         *
 \*********************************************************************************************************/
 
@@ -73,6 +90,64 @@ uniform bool inverted <
 	ui_label = "Enable Inverted Mode";
 > = false;
 
+uniform int doDither <
+	ui_label = "Enable Dithering";
+	ui_tooltip = "Enables Dithering";
+	ui_type = "combo";
+	ui_items = " No Dithering\0 Amplified Dithering\0 Damped Dithering\0"; 
+> = 0;
+
+
+/*********************************************************************************************************/
+/**** Constants ******************************************************************************************/
+/*********************************************************************************************************/
+
+static const float  ditherRes = 1.0;
+static const float  pattern[] = {
+								13, 16, 50, 68, 78, 92, 98, 112, 122, 140, 174,
+								1,1, 0,
+								4,8, 1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+								4,4, 1,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0,
+								2,4, 1,0, 0,0, 0,1, 0,0,
+								3,4, 1,1,0, 0,0,0, 0,1,1, 0,0,0,
+								2,2, 1,0, 0,1,
+								3,4, 0,0,1, 1,1,1, 1,0,0, 1,1,1,
+								2,4, 0,1, 1,1, 1,0, 1,1,
+								4,4, 0,1,1,1, 1,1,1,1, 1,1,0,1, 1,1,1,1,
+								4,8, 0,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,0,1, 1,1,1,1, 1,1,1,1, 1,1,1,1,
+								1,1, 1
+								};
+
+
+/*********************************************************************************************************/
+/**** Functions ******************************************************************************************/
+/*********************************************************************************************************/
+
+float3 dotDither(float3 color, float2 pos, int type, float res)
+{
+	float maxBright = max(max(color.r, color.g), color.b);
+	uint nPattern;
+	if (maxBright < 0.01) nPattern = 0; else
+		if (maxBright > 0.99) nPattern = 10; else
+			nPattern = maxBright < 0.5 ? ceil(maxBright * 10.0) : floor(maxBright * 10.0);
+	
+	uint px			= floor(pos.x * BUFFER_WIDTH / res);
+	uint py			= floor(pos.y * BUFFER_HEIGHT / res);
+	uint posStart	= pattern[nPattern];
+	uint posColumns	= pattern[posStart - 2];
+	uint posLines	= pattern[posStart - 1];
+
+	uint posX		= px % posColumns;
+	uint posY		= py % posLines;
+	
+	uint posValue	= pattern[posStart + posX + posColumns * posY];	
+
+	maxBright 		= (type == 1) ? maxBright : 1.0;
+	if (maxBright > 0.0) color = float(posValue) * color / maxBright;
+	
+	return color;
+}
+
 
 /*********************************************************************************************************/
 /**** Render Functions ***********************************************************************************/
@@ -127,10 +202,11 @@ float4 PS_Outline_P1(float4 pos : SV_Position, float2 coord : TEXCOORD) : SV_Tar
 	
 	// how many neighbours do have the same color?
 	int count = 0;
-	if (col0.r==col1.r && col0.g==col1.g && col0.b==col1.b) count++;
-	if (col0.r==col2.r && col0.g==col2.g && col0.b==col2.b) count++;
-	if (col0.r==col3.r && col0.g==col3.g && col0.b==col3.b) count++;
-	if (col0.r==col4.r && col0.g==col4.g && col0.b==col4.b) count++;
+	if (distance(col0,col1) == 0.0) count++;
+	if (distance(col0,col2) == 0.0) count++;
+	if (distance(col0,col3) == 0.0) count++;
+	if (distance(col0,col4) == 0.0) count++;
+	
 	
 	// type of outline mode. Mode 3 is some kind of color mashing
 	switch (outline_mode)
@@ -140,12 +216,17 @@ float4 PS_Outline_P1(float4 pos : SV_Position, float2 coord : TEXCOORD) : SV_Tar
 										(col1.r!=col2.r && col3.r!=col4.r) ||
 										(col1.g!=col2.g && col3.g!=col4.g) ||
 										(col1.b!=col2.b && col3.b!=col4.b )))
-										outColor.rgb = outline_color; break;
+										outColor.rgb = outline_color; else
+											if (doDither) outColor.rgb = dotDither(outColor.rgb, coord, doDither, ditherRes);
+										break;
 		case 2 : if ((count >= 3) || (count == 2 &&
 										(col1.r!=col2.r && col3.r!=col4.r) ||
 										(col1.g!=col2.g && col3.g!=col4.g) ||
-										(col1.b!=col2.b && col3.b!=col4.b )))
-										outColor.rgb = (col0.rgb + col1.rgb + col2.rgb + col3.rgb + col4.rgb)/5; break;
+										(col1.b!=col2.b && col3.b!=col4.b ))) {
+											outColor.rgb = (col0.rgb + col1.rgb + col2.rgb + col3.rgb + col4.rgb)/5;
+											if (doDither) outColor.rgb = dotDither(outColor.rgb, coord, doDither, ditherRes);
+										}
+										break;
 	}
 	
 	// calculate greyscale and monochrome values
@@ -160,9 +241,9 @@ float4 PS_Outline_P1(float4 pos : SV_Position, float2 coord : TEXCOORD) : SV_Tar
 	{
 		if (color_mode == 0) 
 		{
-			if ((outColor.r + outColor.g + outColor.b) < 0.1) outColor.rgb=float3(1.0,1.0,1.0); else
-				if ((outColor.r + outColor.g + outColor.b) > 2.7) outColor.rgb=float3(0.0,0.0,0.0);
-		} else outColor.rgb = 1.0 - outColor.rgb;
+			if ((outColor.r + outColor.g + outColor.b) < 0.1) outColor.rgb=float3(1.0,1.0,1.0) * outColor.a; else
+				if ((outColor.r + outColor.g + outColor.b) > 2.7) outColor.rgb=float3(0.0,0.0,0.0) * outColor.a;
+		} else outColor.rgb = (1.0 - outColor.rgb); // * outColor.a;
 	}
 	
 	// done	
