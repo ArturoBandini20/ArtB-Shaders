@@ -183,10 +183,6 @@ void main()
 							if( params.doDither > 0.0 ) FragColor.rgb = dotDither( FragColor.rgb, vTexCoord, params.doDither, 1.0 );
 						}
 
-	//vec3 test;
-	//test = dotDither( test, vec2(0.0,0.0), 1.0, 1.0 );
-
-
 	// calculate greyscale and monochrome values	
 	float color = (FragColor.r + FragColor.g + FragColor.b) / 3.0;
 	if (params.color_mode == 2) FragColor.rgb = color < params.threshold_Mono ? vec3(0.0,0.0,0.0) : vec3(1.0,1.0,1.0); else
