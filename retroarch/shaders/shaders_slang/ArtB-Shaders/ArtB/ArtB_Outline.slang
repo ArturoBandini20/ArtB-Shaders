@@ -3,8 +3,10 @@
 /*********************************************************************************************************\
 *                                                                                                         *
 *   ArtB. Outline                                                                                         *
-*   v1.00, 2020 by ArturoBandini                                                                          *
-*   License: Free for everyone                                                                            *
+*   v2.00, 2021 by ArturoBandini                                                                          *
+*                                                                                                         *
+*   This work is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License     *
+*   To view a copy of this license, visit http://creativecommons.org/licenses/by-sa/4.0/                  *
 *                                                                                                         *
 \*********************************************************************************************************/
 
@@ -24,7 +26,7 @@ layout(push_constant) uniform Push
 	float threshold_Blue;
 	float color_mode;
 	float inverted;
-	
+	float doDither;
 	
 } params;
 
@@ -40,7 +42,9 @@ layout(push_constant) uniform Push
 #pragma parameter threshold_Blue   "Threshold: Color Blue"						2.50 1.00 20.00 0.01
 #pragma parameter color_mode       "Mode: 0|Colors  1|Greyscale  2|Monochrome"	0.00 0.00  2.00 1.00
 #pragma parameter inverted         "Enable Inverted Mode"						0.00 0.00  1.00 1.00
+#pragma parameter doDither		   "Dithering: 0|None  1|Amplified  2|Damped"	0.00 0.00  2.00 1.00
 
+#define ditherRes 1.0;
 
 layout(std140, set = 0, binding = 0) uniform UBO
 {
@@ -51,7 +55,6 @@ layout(std140, set = 0, binding = 0) uniform UBO
 layout(location = 0) in vec4 Position;
 layout(location = 1) in vec2 TexCoord;
 layout(location = 0) out vec2 vTexCoord;
-
 
 void main()
 {
@@ -64,6 +67,46 @@ layout(location = 0) in  vec2 vTexCoord;
 layout(location = 0) out vec4 FragColor;
 layout(set = 0, binding = 2) uniform sampler2D Source;
 
+vec3 dotDither( vec3 color, vec2 pos, float type, float res )
+{
+	const int pattern[] =	{
+						13, 16, 50, 68, 78, 92, 98, 112, 122, 140, 174,
+						1,1, 0,
+						4,8, 1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+						4,4, 1,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0,
+						2,4, 1,0, 0,0, 0,1, 0,0,
+						3,4, 1,1,0, 0,0,0, 0,1,1, 0,0,0,
+						2,2, 1,0, 0,1,
+						3,4, 0,0,1, 1,1,1, 1,0,0, 1,1,1,
+						2,4, 0,1, 1,1, 1,0, 1,1,
+						4,4, 0,1,1,1, 1,1,1,1, 1,1,0,1, 1,1,1,1,
+						4,8, 0,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,0,1, 1,1,1,1, 1,1,1,1, 1,1,1,1,
+						1,1, 1
+	};
+
+
+	float maxBright = max( max( color.r, color.g ), color.b );
+	uint nPattern;
+	if( maxBright < 0.01 ) nPattern = 0; else
+		if( maxBright > 0.99 ) nPattern = 10; else
+			nPattern = ( maxBright < 0.5 ) ? int( ceil( maxBright * 10.0 ) ) : int( floor( maxBright * 10.0 ) );
+		
+	uint px			= int( pos.x * params.OutputSize.x / res);
+	uint py			= int( pos.y * params.OutputSize.y / res);
+	uint posStart	= pattern[ nPattern ];
+	uint posColumns	= pattern[ posStart - 2 ];
+	uint posLines	= pattern[ posStart - 1 ];
+
+	uint posX		= px - posColumns * int( floor( px / posColumns ) );
+	uint posY		= py - posLines * int( floor( py / posLines ) );
+	
+	uint posValue	= pattern[ posStart + posX + posColumns * posY ];	
+
+	maxBright 		= ( type == 1.0 ) ? maxBright : 1.0;
+	if( maxBright > 0.0 ) color = float( posValue ) * color / maxBright;
+	
+	return color;
+}
 
 void main()
 {
@@ -122,25 +165,27 @@ void main()
 	if (col0.r==col4.r && col0.g==col4.g && col0.b==col4.b) count++;
 	
 	// type of outline mode. Mode 3 is some kind of color mashing
+	
 	if (params.outline_mode == 0 && count == 4) FragColor.rgb = outline_color * FragColor.a;
+	
 	if (params.outline_mode == 1 && ((count == 3) || (count == 2 &&
 						(col1.r!=col2.r && col3.r!=col4.r) ||
 						(col1.g!=col2.g && col3.g!=col4.g) ||
 						(col1.b!=col2.b && col3.b!=col4.b ))))
-						FragColor.rgb = outline_color; else
+						FragColor.rgb = outline_color; //else
+							if( params.doDither > 0.0 ) FragColor.rgb = dotDither( FragColor.rgb, vTexCoord, params.doDither, 1.0 );
+						
 	if (params.outline_mode == 2 && ((count >= 3) || (count == 2 &&
 						(col1.r!=col2.r && col3.r!=col4.r) ||
 						(col1.g!=col2.g && col3.g!=col4.g) ||
-						(col1.b!=col2.b && col3.b!=col4.b ))))
-						FragColor.rgb = (col0.rgb + col1.rgb + col2.rgb + col3.rgb + col4.rgb)/5;
-	
-	
-	
-/*	if (col0.r==col1.r && col0.r==col2.r && col0.r==col3.r && col0.r==col4.r)
-		if (col0.g==col1.g && col0.g==col2.g && col0.g==col3.g && col0.g==col4.g)
-			if (col0.b==col1.b && col0.b==col2.b && col0.b==col3.b && col0.b==col4.b)
-				FragColor.rgb = vec3(0.0,0.0,0.0);
-*/
+						(col1.b!=col2.b && col3.b!=col4.b )))) {
+							FragColor.rgb = (col0.rgb + col1.rgb + col2.rgb + col3.rgb + col4.rgb)/5;
+							if( params.doDither > 0.0 ) FragColor.rgb = dotDither( FragColor.rgb, vTexCoord, params.doDither, 1.0 );
+						}
+
+	//vec3 test;
+	//test = dotDither( test, vec2(0.0,0.0), 1.0, 1.0 );
+
 
 	// calculate greyscale and monochrome values	
 	float color = (FragColor.r + FragColor.g + FragColor.b) / 3.0;
@@ -152,8 +197,8 @@ void main()
 	{
 		if (params.color_mode == 0.0)
 		{
-			if ((FragColor.r + FragColor.g + FragColor.b) < 0.1) FragColor.rgb=vec3(1.0,1.0,1.0); else
-				if ((FragColor.r + FragColor.g + FragColor.b) > 2.7) FragColor.rgb=vec3(0.0,0.0,0.0);
+			if ((FragColor.r + FragColor.g + FragColor.b) < 0.1) FragColor.rgb=vec3(1.0,1.0,1.0) * FragColor.a; else
+				if ((FragColor.r + FragColor.g + FragColor.b) > 2.7) FragColor.rgb=vec3(0.0,0.0,0.0) * FragColor.a;
 		} else FragColor.rgb = 1.0 - FragColor.rgb;			
 	}
 
