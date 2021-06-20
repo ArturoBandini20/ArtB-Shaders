@@ -39,29 +39,22 @@
 /*********************************************************************************************************/
 
 uniform float ScreenBrightness < __UNIFORM_SLIDER_FLOAT1
-	ui_label = "Brightness 1";
+	ui_label = "Brightness";
 	ui_tooltip = "Brightness Type 1";
 	ui_min = -1.0; ui_max = 1.0; ui_step = 0.001;
 	ui_category = "Color Options"; ui_spacing = 2;
 > = 0.0;
 
-uniform float ScreenBrightness2 < __UNIFORM_SLIDER_FLOAT1
-	ui_label = "Brightness 2";
-	ui_tooltip = "Brightness Type 2";
-	ui_min = -1.0; ui_max = 1.0; ui_step = 0.001;
-	ui_category = "Color Options";
-> = 0.0;
-
 uniform float ScreenContrast < __UNIFORM_SLIDER_FLOAT1
-	ui_label = "Contrast 1";
+	ui_label = "Contrast";
 	ui_tooltip = "Contrast Type 1";
 	ui_min = -1.0; ui_max = 1.0; ui_step = 0.001;
 	ui_category = "Color Options";
 > = 0.0;
 
-uniform float ScreenContrast2 < __UNIFORM_SLIDER_FLOAT1
-	ui_label = "Contrast 2";
-	ui_tooltip = "Contrast Type 2";
+uniform float ScreenFade < __UNIFORM_SLIDER_FLOAT1
+	ui_label = "Fade";
+	ui_tooltip = "Fade0";
 	ui_min = -1.0; ui_max = 1.0; ui_step = 0.001;
 	ui_category = "Color Options";
 > = 0.0;
@@ -284,36 +277,32 @@ float4 PS_Collie(float4 pos : SV_Position, float2 coord : TEXCOORD) : SV_Target
 	}
 	
 	// Apply Saturation
-	outColor.rgb = lerp( getLum( outColor.rgb), outColor.rgb, ScreenSaturation + 1.0 );
+	if( ScreenSaturation ) outColor.rgb = lerp( getLum( outColor.rgb), outColor.rgb, ScreenSaturation + 1.0 );
 	
 	// Apply Luminance
-	float3 c = 1.0f - ( 1.0f - outColor.rgb ) * ( 1.0f - outColor.rgb );
-	outColor.rgb = lerp( outColor.rgb, c.rgb, 2.0 * ScreenLuminance );
+	if( ScreenLuminance ) outColor.rgb = lerp( outColor.rgb, 1.0 - pow( 1.0 - outColor.rgb, 2.0 ), 2.0 * ScreenLuminance );
 	
-	// Apply Brightness Type 1
-	c = 1.0 - ( 1.0 - outColor.rgb ) * ( 1.0 - outColor.rgb );
-	outColor.rgb = lerp( outColor.rgb, c.rgb, 2.0 * ScreenBrightness );
+	// Apply Brightness
+	if( ScreenBrightness ) outColor.rgb *= (1.0 + ScreenBrightness);
+	
+	// Apply Contrast
+	if( ScreenContrast ) outColor.rgb = lerp( outColor.rgb, sl(outColor.rgb), 2.0 * ScreenContrast );
 
-	// Apply Brightness Type 2
-	outColor.rgb *= (1.0 + ScreenBrightness2);
-	
-	// Apply Contrast Type 1
-    c = sl(outColor.rgb);
-    outColor.rgb = lerp( outColor.rgb, c.rgb, 2.0 * ScreenContrast );
-
-	// Apply Contrast Type 2
-	if (distance(outColor.rgb,float3(0.0,0.0,0.0) > 0.0)) outColor.rgb = lerp( outColor.rgb, float3(0.5,0.5,0.5), -ScreenContrast2 );
-	
+	// Apply Fade
+	if( ScreenFade ) if (distance(outColor.rgb,float3(0.0,0.0,0.0)) > 0.0) outColor.rgb = lerp( outColor.rgb, float3(0.5,0.5,0.5), ScreenFade );
 
 	//Apply Vibrance
-    float4 sat = 0.0f;
-    sat.rg = float2( min( min( outColor.r, outColor.g ), outColor.b ), max( max( outColor.r, outColor.g ), outColor.b ));
-    sat.b = sat.g - sat.r;
-    sat.a = getLum( sat.rgb );
-    outColor.rgb = lerp( sat.a, outColor.rgb, 1.0f + ( ScreenVibrance * ( 1.0f - sat.a )));	
-
+	if( ScreenVibrance )
+	{
+		float4 sat = 0.0f;
+		sat.rg = float2( min( min( outColor.r, outColor.g ), outColor.b ), max( max( outColor.r, outColor.g ), outColor.b ));
+		sat.b = sat.g - sat.r;
+		sat.a = getLum( sat.rgb );
+		outColor.rgb = lerp( sat.a, outColor.rgb, 1.0f + ( ScreenVibrance * ( 1.0f - sat.a )));	
+	}
+	
 	//Apply Exposure
-	outColor.rgb = saturate( outColor.rgb * ( ScreenExposure * ( 1.0f - outColor.rgb ) + 1.0f ));
+	if( ScreenExposure ) outColor.rgb = saturate( outColor.rgb * ( ScreenExposure * ( 1.0 - outColor.rgb ) + 1.0 ));
 
 	//Apply Color Shift
 	if (colorShift)
